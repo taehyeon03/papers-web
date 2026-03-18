@@ -114,7 +114,7 @@ def _extract_figures(arxiv_id):
             src = img.get("src", "")
             if not src or src.startswith("data:"):
                 continue
-            url = src if src.startswith("http") else urljoin(base_url + "/", src)
+            url = src if src.startswith("http") else urljoin(base_url, src)
             caption = cap_el.text.strip()[:200] if cap_el else ""
 
             item = {"url": url, "caption": caption}
@@ -152,14 +152,26 @@ def summarize_korean(title, abstract, api_key):
 • 기여 또는 성능 결과 1
 • 기여 또는 성능 결과 2
 • 기여 또는 성능 결과 3"""
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
-        return response.text.strip()
-    except Exception as e:
-        return f"[핵심 요약]\n요약 생성 실패: {e}"
+    for model in ["gemini-2.0-flash", "gemini-2.5-flash"]:
+        for attempt in range(4):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                )
+                return response.text.strip()
+            except Exception as e:
+                err = str(e)
+                if "503" in err or "UNAVAILABLE" in err:
+                    time.sleep(5 * (attempt + 1))
+                    continue
+                if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                    wait = 30 * (attempt + 1)
+                    print(f"    속도 제한, {wait}초 대기 후 재시도…")
+                    time.sleep(wait)
+                    continue
+                return f"[핵심 요약]\n요약 생성 실패: {e}"
+    return "[핵심 요약]\n요약 생성 실패: 모든 재시도 실패"
 
 
 # ──────────────────────────────────────────────
@@ -358,7 +370,7 @@ if __name__ == "__main__":
         if details["abstract"]:
             print("  → Gemini 요약 생성 중…")
             summary = summarize_korean(p["title"], details["abstract"], gemini_key)
-            time.sleep(1.5)
+            time.sleep(4)
         else:
             summary = "[핵심 요약]\n초록을 가져올 수 없습니다."
 
