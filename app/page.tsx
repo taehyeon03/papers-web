@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import SubscribeForm from "@/components/SubscribeForm";
 import PaperCard from "@/components/PaperCard";
 
-export const revalidate = 3600; // 1시간마다 재빌드
+export const revalidate = 60; // 1시간마다 재빌드
 
 export interface Figure {
   url: string;
