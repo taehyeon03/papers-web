@@ -154,7 +154,7 @@ def summarize_korean(title, abstract, api_key):
 • 기여 또는 성능 결과 3"""
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         return response.text.strip()
