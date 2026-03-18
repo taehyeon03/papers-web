@@ -66,7 +66,7 @@ export default async function Home() {
         {papers.length === 0 ? (
           <div className="py-24 text-center text-gray-400">
             <p className="text-lg">아직 오늘의 논문이 없습니다.</p>
-            <p className="text-sm mt-2">매일 오전 10시에 업데이트됩니다.</p>
+            <p className="text-sm mt-2">매일 오전 9시에 업데이트됩니다.</p>
           </div>
         ) : (
           <div className="divide-y-2 divide-black">
@@ -80,7 +80,7 @@ export default async function Home() {
       {/* ── 푸터 ── */}
       <footer className="mt-16 border-t border-gray-200 bg-gray-50 py-8 text-center">
         <p className="text-xs text-gray-400">
-          자동 생성 · HuggingFace Trending Papers · 매일 오전 10시 업데이트
+          자동 생성 · HuggingFace Trending Papers · 매일 오전 9시 업데이트
         </p>
       </footer>
     </main>
