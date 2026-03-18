@@ -2,7 +2,7 @@
 HuggingFace Papers Daily Digest
 - HuggingFace trending 스크래핑
 - arxiv에서 초록 + 메인 피규어 추출
-- Gemini Flash로 한국어 요약
+- Groq (Llama 3.3 70B)으로 한국어 요약
 - Supabase에 저장 (웹 표시용)
 - 구독자 전체에게 신문 형식 이메일 발송
 """
@@ -16,8 +16,7 @@ from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
-from google import genai
-from google.genai import types as genai_types
+from groq import Groq
 from supabase import create_client
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -134,7 +133,7 @@ def _extract_figures(arxiv_id):
 # 3. Gemini 한국어 요약
 # ──────────────────────────────────────────────
 def summarize_korean(title, abstract, api_key):
-    client = genai.Client(api_key=api_key)
+    client = Groq(api_key=api_key)
     prompt = f"""아래 AI/ML 논문을 한국어로 분석해줘.
 
 제목: {title}
@@ -152,22 +151,22 @@ def summarize_korean(title, abstract, api_key):
 • 기여 또는 성능 결과 1
 • 기여 또는 성능 결과 2
 • 기여 또는 성능 결과 3"""
-    for model in ["gemini-2.0-flash", "gemini-2.5-flash"]:
-        for attempt in range(3):
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                )
-                return response.text.strip()
-            except Exception as e:
-                err = str(e)
-                if "503" in err or "UNAVAILABLE" in err or "429" in err or "RESOURCE_EXHAUSTED" in err:
-                    wait = 10 * (attempt + 1)
-                    print(f"    API 제한({model}), {wait}초 대기…")
-                    time.sleep(wait)
-                    continue
-                return f"[핵심 요약]\n요약 생성 실패: {e}"
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "rate" in err.lower():
+                wait = 10 * (attempt + 1)
+                print(f"    API 제한, {wait}초 대기…")
+                time.sleep(wait)
+                continue
+            return f"[핵심 요약]\n요약 생성 실패: {e}"
     return "[핵심 요약]\n요약 생성 실패: API 한도 초과"
 
 
@@ -290,7 +289,7 @@ def build_email_html(papers_data, date_str, unsub_token, site_url):
       <tr>
         <td style="font-size:11px;color:#888;text-align:left;">{date_str} · KST</td>
         <td style="font-size:11px;color:#888;text-align:center;">오늘의 AI 논문 {len(papers_data)}선</td>
-        <td style="font-size:11px;color:#888;text-align:right;">Powered by Gemini 1.5 Flash</td>
+        <td style="font-size:11px;color:#888;text-align:right;">Powered by Groq / Llama 3.3</td>
       </tr>
     </table>
   </td></tr>
@@ -348,7 +347,7 @@ if __name__ == "__main__":
     today = date.today()
     today_str = today.strftime("%Y년 %m월 %d일")
     today_iso = today.isoformat()
-    gemini_key = os.environ["GEMINI_API_KEY"]
+    groq_key = os.environ["GROQ_API_KEY"]
     site_url = os.environ.get("SITE_URL", "https://your-app.vercel.app").rstrip("/")
 
     print("=" * 60)
@@ -365,8 +364,8 @@ if __name__ == "__main__":
         print(f"  arxiv: {details['arxiv_id']} | 피규어: {len(details['figures'])}개")
 
         if details["abstract"]:
-            print("  → Gemini 요약 생성 중…")
-            summary = summarize_korean(p["title"], details["abstract"], gemini_key)
+            print("  → Groq 요약 생성 중…")
+            summary = summarize_korean(p["title"], details["abstract"], groq_key)
             time.sleep(4)
         else:
             summary = "[핵심 요약]\n초록을 가져올 수 없습니다."
