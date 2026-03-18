@@ -153,7 +153,7 @@ def summarize_korean(title, abstract, api_key):
 • 기여 또는 성능 결과 2
 • 기여 또는 성능 결과 3"""
     for model in ["gemini-2.0-flash", "gemini-2.5-flash"]:
-        for attempt in range(4):
+        for attempt in range(3):
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -162,16 +162,13 @@ def summarize_korean(title, abstract, api_key):
                 return response.text.strip()
             except Exception as e:
                 err = str(e)
-                if "503" in err or "UNAVAILABLE" in err:
-                    time.sleep(5 * (attempt + 1))
-                    continue
-                if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                    wait = 30 * (attempt + 1)
-                    print(f"    속도 제한, {wait}초 대기 후 재시도…")
+                if "503" in err or "UNAVAILABLE" in err or "429" in err or "RESOURCE_EXHAUSTED" in err:
+                    wait = 10 * (attempt + 1)
+                    print(f"    API 제한({model}), {wait}초 대기…")
                     time.sleep(wait)
                     continue
                 return f"[핵심 요약]\n요약 생성 실패: {e}"
-    return "[핵심 요약]\n요약 생성 실패: 모든 재시도 실패"
+    return "[핵심 요약]\n요약 생성 실패: API 한도 초과"
 
 
 # ──────────────────────────────────────────────
