@@ -48,7 +48,7 @@ export default async function Home() {
           <h1 className="text-5xl md:text-6xl font-black font-serif-kr text-black leading-tight mb-3">
             HuggingFace Papers
           </h1>
-          <div className="border-t border-b border-gray-300 py-2 flex justify-between text-[11px] text-gray-500">
+          <div className="border-t border-b border-gray-300 py-2 flex flex-col md:flex-row md:justify-between items-center gap-1 text-[11px] text-gray-500">
             <span>{dateStr}</span>
             <span className="font-semibold">오늘의 AI 논문 {papers.length}선</span>
             <span>Powered by Gemini 1.5 Flash</span>
@@ -56,7 +56,7 @@ export default async function Home() {
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-6">
+      <div className="max-w-5xl mx-auto px-4 md:px-6">
         {/* ── 구독 폼 ── */}
         <div className="my-8">
           <SubscribeForm />

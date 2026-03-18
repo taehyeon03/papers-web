@@ -22,7 +22,7 @@ export default function SubscribeForm() {
 
     if (res.ok) {
       setStatus("success");
-      setMessage("구독 완료! 매일 오전 10시에 논문 다이제스트를 받으실 수 있습니다. 📬");
+      setMessage("구독 완료! 매일 오전 9시에 논문 다이제스트를 받으실 수 있습니다. 📬");
       setEmail("");
     } else {
       setStatus("error");
