@@ -1,5 +1,4 @@
 import { supabase } from "@/lib/supabase";
-import SubscribeForm from "@/components/SubscribeForm";
 import PaperCard from "@/components/PaperCard";
 
 export const revalidate = 60; // 1시간마다 재빌드
@@ -57,11 +56,6 @@ export default async function Home() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 md:px-6">
-        {/* ── 구독 폼 ── */}
-        <div className="my-8">
-          <SubscribeForm />
-        </div>
-
         {/* ── 논문 목록 ── */}
         {papers.length === 0 ? (
           <div className="py-24 text-center text-gray-400">
