@@ -4,13 +4,11 @@ HuggingFace Papers Daily Digest
 - arxiv에서 초록 + 메인 피규어 추출
 - Groq (Llama 3.3 70B)으로 한국어 요약
 - Supabase에 저장 (웹 표시용)
-- 구독자 전체에게 신문 형식 이메일 발송
 """
 
 import os
 import re
 import time
-import smtplib
 from datetime import date
 from urllib.parse import urljoin
 
@@ -18,14 +16,12 @@ import requests
 from bs4 import BeautifulSoup
 from groq import Groq
 from supabase import create_client
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 # ──────────────────────────────────────────────
 # 설정
 # ──────────────────────────────────────────────
 HF_TRENDING_URL = "https://huggingface.co/papers"
-MAX_PAPERS = 8
+MAX_PAPERS = 10  # HuggingFace trending 페이지는 upvote 순 정렬 → 상위 10개 수집
 MAX_FIGURES_PER_PAPER = 2
 HEADERS = {
     "User-Agent": (
@@ -182,164 +178,6 @@ def save_to_supabase(papers_data, date_str):
     print(f"  ✔ Supabase 저장 완료 ({len(papers_data)}개 논문)")
 
 
-def get_subscribers():
-    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
-    result = sb.table("subscribers").select("email, token").eq("active", True).execute()
-    return result.data or []
-
-
-# ──────────────────────────────────────────────
-# 5. 이메일 HTML 생성 (신문 형식)
-# ──────────────────────────────────────────────
-def fmt_summary_html(text):
-    """요약 텍스트 → 섹션별 HTML"""
-    html_parts = []
-    for line in text.split("\n"):
-        s = line.strip()
-        if not s:
-            continue
-        if s.startswith("[") and s.endswith("]"):
-            html_parts.append(
-                f'<p style="margin:14px 0 5px;font-size:11px;font-weight:700;'
-                f'color:#555;letter-spacing:1px;text-transform:uppercase;'
-                f'border-bottom:1px solid #e0e0e0;padding-bottom:4px;">'
-                f'{s[1:-1]}</p>'
-            )
-        elif s.startswith("•"):
-            html_parts.append(
-                f'<p style="margin:3px 0;font-size:14px;color:#333;'
-                f'padding-left:10px;line-height:1.7;">{s}</p>'
-            )
-        else:
-            html_parts.append(
-                f'<p style="margin:4px 0;font-size:14px;color:#444;line-height:1.8;">{s}</p>'
-            )
-    return "\n".join(html_parts)
-
-
-def build_email_html(papers_data, date_str, unsub_token, site_url):
-    unsub_url = f"{site_url}/api/unsubscribe?token={unsub_token}"
-
-    articles = ""
-    for i, p in enumerate(papers_data, 1):
-        figs_html = ""
-        for fig in p.get("figures", []):
-            cap = fig["caption"][:120] + "…" if len(fig["caption"]) > 120 else fig["caption"]
-            figs_html += f"""
-            <tr><td style="padding:4px 0;">
-              <img src="{fig['url']}" alt="figure"
-                   style="max-width:260px;width:100%;border-radius:4px;
-                          border:1px solid #e8e8e8;display:block;" />
-              {'<p style="margin:3px 0 0;font-size:11px;color:#999;font-style:italic;">▲ ' + cap + '</p>' if cap else ''}
-            </td></tr>"""
-
-        fig_col = (
-            f'<td width="270" valign="top" style="padding-left:20px;">'
-            f'<table cellpadding="0" cellspacing="0" border="0">{figs_html}</table></td>'
-            if figs_html else ""
-        )
-
-        articles += f"""
-        <tr><td style="padding:0 0 36px;border-bottom:2px solid #111;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td width="56" valign="top"
-                  style="font-size:52px;font-weight:900;color:#ececec;
-                         font-family:Georgia,serif;line-height:1;padding-right:10px;">
-                {i:02d}
-              </td>
-              <td valign="top">
-                <p style="margin:0 0 3px;font-size:18px;font-weight:800;color:#111;
-                          font-family:Georgia,serif;line-height:1.3;">{p['title']}</p>
-                <p style="margin:0 0 14px;font-size:12px;">
-                  <a href="{p['arxiv_url']}" style="color:#999;text-decoration:none;">
-                    🔗 {p['arxiv_url']}
-                  </a>
-                </p>
-              </td>
-            </tr>
-            <tr><td colspan="2">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-                <td valign="top">
-                  <div style="background:#f9f9f9;border-left:4px solid #111;padding:14px 18px;border-radius:0 6px 6px 0;">
-                    {fmt_summary_html(p.get('summary_kr', ''))}
-                  </div>
-                </td>
-                {fig_col}
-              </tr></table>
-            </td></tr>
-          </table>
-        </td></tr>
-        <tr><td style="height:36px;"></td></tr>
-        """
-
-    return f"""<!DOCTYPE html>
-<html lang="ko">
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#fff;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fff;">
-<tr><td align="center">
-<table width="840" cellpadding="0" cellspacing="0" border="0" style="max-width:840px;width:100%;">
-
-  <!-- 헤더 -->
-  <tr><td style="border-top:5px solid #111;border-bottom:1px solid #ccc;padding:22px 36px 16px;text-align:center;">
-    <p style="margin:0 0 3px;font-size:10px;color:#aaa;letter-spacing:3px;text-transform:uppercase;">Daily AI Research Digest</p>
-    <h1 style="margin:0 0 10px;font-size:42px;font-weight:900;color:#111;font-family:Georgia,serif;letter-spacing:-1px;">HuggingFace Papers</h1>
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #ddd;padding-top:8px;margin-top:4px;">
-      <tr>
-        <td style="font-size:11px;color:#888;text-align:left;">{date_str} · KST</td>
-        <td style="font-size:11px;color:#888;text-align:center;">오늘의 AI 논문 {len(papers_data)}선</td>
-        <td style="font-size:11px;color:#888;text-align:right;">Powered by Groq / Llama 3.3</td>
-      </tr>
-    </table>
-  </td></tr>
-
-  <tr><td style="height:32px;"></td></tr>
-
-  <!-- 논문 본문 -->
-  <tr><td style="padding:0 36px;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0">
-      {articles}
-    </table>
-  </td></tr>
-
-  <!-- 푸터 -->
-  <tr><td style="border-top:1px solid #e0e0e0;padding:18px 36px;background:#f5f5f5;text-align:center;">
-    <p style="margin:0 0 6px;font-size:11px;color:#bbb;">자동 생성 AI 논문 다이제스트 · HuggingFace Trending Papers</p>
-    <p style="margin:0;font-size:11px;">
-      <a href="{site_url}" style="color:#999;">웹에서 보기</a>
-      &nbsp;·&nbsp;
-      <a href="{unsub_url}" style="color:#999;">구독 취소</a>
-    </p>
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body></html>"""
-
-
-# ──────────────────────────────────────────────
-# 6. 이메일 발송
-# ──────────────────────────────────────────────
-def send_emails(papers_data, subscribers, date_str, site_url):
-    gmail_user = os.environ["GMAIL_USER"]
-    gmail_pw = os.environ["GMAIL_PASSWORD"]
-    subject = f"[AI 논문 다이제스트] {date_str} — HuggingFace Trending {len(papers_data)}선"
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(gmail_user, gmail_pw)
-        for sub in subscribers:
-            html = build_email_html(papers_data, date_str, sub["token"], site_url)
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"AI Papers Digest <{gmail_user}>"
-            msg["To"] = sub["email"]
-            msg.attach(MIMEText(html, "html", "utf-8"))
-            server.sendmail(gmail_user, sub["email"], msg.as_string())
-            print(f"  → {sub['email']}")
-
-
 # ──────────────────────────────────────────────
 # 메인
 # ──────────────────────────────────────────────
@@ -348,7 +186,6 @@ if __name__ == "__main__":
     today_str = today.strftime("%Y년 %m월 %d일")
     today_iso = today.isoformat()
     groq_key = os.environ["GROQ_API_KEY"]
-    site_url = os.environ.get("SITE_URL", "https://your-app.vercel.app").rstrip("/")
 
     print("=" * 60)
     print(f"📡 HuggingFace Trending — {today_str}")
@@ -375,15 +212,5 @@ if __name__ == "__main__":
 
     print("💾 Supabase 저장 중…")
     save_to_supabase(results, today_iso)
-
-    print("\n📬 구독자 조회 중…")
-    subscribers = get_subscribers()
-    print(f"  → {len(subscribers)}명")
-
-    if subscribers:
-        print("📮 이메일 발송 중…")
-        send_emails(results, subscribers, today_str, site_url)
-    else:
-        print("  구독자 없음, 발송 생략")
 
     print("\n✅ 완료!")

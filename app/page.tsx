@@ -49,7 +49,7 @@ export default async function Home() {
           </h1>
           <div className="border-t border-b border-gray-300 py-2 flex flex-col md:flex-row md:justify-between items-center gap-1 text-[11px] text-gray-500">
             <span>{dateStr}</span>
-            <span className="font-semibold">오늘의 AI 논문 {papers.length}선</span>
+            <span className="font-semibold">오늘의 AI 논문 upvote 상위 {papers.length}선</span>
             <span>Powered by Groq / Llama 3.3</span>
           </div>
         </div>
