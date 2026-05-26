@@ -6,6 +6,7 @@ HuggingFace Papers Daily Digest
 - Supabase에 저장 (웹 표시용)
 """
 
+import json
 import os
 import re
 import time
@@ -34,6 +35,21 @@ BLOCKED_COMPANY_PATTERNS = [
     r"\bapple\b",
 ]
 BLOCKED_RE = re.compile("|".join(BLOCKED_COMPANY_PATTERNS), re.IGNORECASE)
+
+# 분야 태깅 카테고리 — lib/categories.ts와 동기화 유지
+TAG_CATEGORIES = {
+    "foundation": "LLM, foundation models, transformer/attention architectures, large-scale pretraining",
+    "nlp": "natural language processing tasks: translation, summarization, dialog, text understanding, QA",
+    "vision": "computer vision: image/video/3D understanding, segmentation, detection, classification",
+    "generative": "generative models: GANs, VAEs, diffusion, image/video/audio/speech generation",
+    "multimodal": "multimodal learning: vision-language, audio-vision, world models, cross-modal alignment",
+    "agent": "reasoning, planning, agents, tool use, reinforcement learning, LLM agents",
+    "robotics": "robotics, manipulation, embodied AI, robot learning, control",
+    "efficient": "efficient ML, PEFT/LoRA, quantization, distillation, inference systems, infrastructure",
+    "safety": "AI safety, alignment, RLHF, fairness, bias, interpretability/XAI, red-teaming",
+    "theory": "theory, math, optimization, statistical learning, evaluation benchmarks, scientific/healthcare/neuroscience applications",
+}
+VALID_TAGS = set(TAG_CATEGORIES.keys())
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -193,6 +209,53 @@ def summarize_korean(title, abstract, api_key):
 
 
 # ──────────────────────────────────────────────
+# 3.5. 분야 태깅 (Groq)
+# ──────────────────────────────────────────────
+def tag_paper(title, abstract, api_key):
+    """논문을 1~2개 카테고리로 분류 → ['foundation', 'efficient'] 형태"""
+    if not abstract:
+        return []
+    client = Groq(api_key=api_key)
+    cat_list = "\n".join(f'- {k}: {v}' for k, v in TAG_CATEGORIES.items())
+    prompt = f"""Classify this AI/ML paper into 1 or 2 most relevant categories from the list below.
+
+Categories:
+{cat_list}
+
+Paper title: {title}
+Paper abstract: {abstract}
+
+Output ONLY a JSON array of 1 or 2 category keys, nothing else. Example: ["foundation", "efficient"]"""
+
+    for attempt in range(3):
+        try:
+            resp = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=50,
+            )
+            text = resp.choices[0].message.content.strip()
+            # JSON 추출 (코드펜스나 추가 텍스트가 있어도 array만 잡아냄)
+            m = re.search(r"\[[^\]]*\]", text)
+            if not m:
+                return []
+            tags = json.loads(m.group(0))
+            # 유효 카테고리만 + 최대 2개
+            return [t for t in tags if isinstance(t, str) and t in VALID_TAGS][:2]
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "rate" in err.lower():
+                wait = 8 * (attempt + 1)
+                print(f"    태깅 API 제한, {wait}초 대기…")
+                time.sleep(wait)
+                continue
+            print(f"    태깅 실패: {e}")
+            return []
+    return []
+
+
+# ──────────────────────────────────────────────
 # 4. Supabase 저장
 # ──────────────────────────────────────────────
 def save_to_supabase(papers_data, date_str):
@@ -239,12 +302,17 @@ if __name__ == "__main__":
             print("  → Groq 요약 생성 중…")
             summary = summarize_korean(p["title"], details["abstract"], groq_key)
             time.sleep(4)
+            print("  → 분야 태깅 중…")
+            tags = tag_paper(p["title"], details["abstract"], groq_key)
+            print(f"    태그: {tags}")
+            time.sleep(2)
         else:
             summary = "[핵심 요약]\n초록을 가져올 수 없습니다."
+            tags = []
 
         # 저장 시 내부용 필드는 제거
         details.pop("_affiliations", None)
-        results.append({**p, **details, "summary_kr": summary})
+        results.append({**p, **details, "summary_kr": summary, "tags": tags})
         print()
 
     print(f"✔ 최종 {len(results)}개 (건너뜀: {skipped}개)")

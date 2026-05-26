@@ -1,7 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import PaperCard from "@/components/PaperCard";
+import TagSidebar from "@/components/TagSidebar";
+import { CATEGORIES } from "@/lib/categories";
 
-export const revalidate = 60; // 1시간마다 재빌드
+export const revalidate = 60;
 
 export interface Figure {
   url: string;
@@ -16,19 +18,25 @@ export interface Paper {
   abstract: string;
   summary_kr: string;
   figures: Figure[];
+  tags?: string[];
+}
+
+interface DigestRow {
+  date: string;
+  papers: Paper[];
 }
 
 export default async function Home() {
-  const { data: digest } = await supabase
+  const { data: digests } = await supabase
     .from("digests")
     .select("date, papers")
-    .order("date", { ascending: false })
-    .limit(1)
-    .single();
+    .order("date", { ascending: false });
 
-  const papers: Paper[] = digest?.papers ?? [];
-  const dateStr = digest?.date
-    ? new Date(digest.date).toLocaleDateString("ko-KR", {
+  const all: DigestRow[] = Array.isArray(digests) ? digests : [];
+  const latest = all[0];
+  const papers: Paper[] = Array.isArray(latest?.papers) ? latest.papers : [];
+  const dateStr = latest?.date
+    ? new Date(latest.date).toLocaleDateString("ko-KR", {
         year: "numeric",
         month: "long",
         day: "numeric",
@@ -36,11 +44,26 @@ export default async function Home() {
       })
     : "로딩 중...";
 
+  // 누적 태그 카운트 (모든 digest의 모든 paper.tags 합산)
+  const counts: Record<string, number> = Object.fromEntries(
+    CATEGORIES.map((c) => [c.key, 0])
+  );
+  let totalTagged = 0;
+  for (const row of all) {
+    const ps = Array.isArray(row.papers) ? row.papers : [];
+    for (const p of ps) {
+      const tags = Array.isArray(p.tags) ? p.tags : [];
+      if (tags.length > 0) totalTagged++;
+      for (const t of tags) {
+        if (t in counts) counts[t]++;
+      }
+    }
+  }
+
   return (
     <main className="min-h-screen bg-white">
-      {/* ── 신문 헤더 ── */}
       <header className="border-t-[5px] border-black">
-        <div className="max-w-5xl mx-auto px-6 py-6 text-center">
+        <div className="max-w-7xl mx-auto px-6 py-6 text-center">
           <p className="text-[10px] tracking-[4px] text-gray-400 uppercase mb-1">
             Daily AI Research Digest
           </p>
@@ -55,23 +78,31 @@ export default async function Home() {
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 md:px-6">
-        {/* ── 논문 목록 ── */}
-        {papers.length === 0 ? (
-          <div className="py-24 text-center text-gray-400">
-            <p className="text-lg">아직 오늘의 논문이 없습니다.</p>
-            <p className="text-sm mt-2">매일 오전 9시에 업데이트됩니다.</p>
+      <div className="max-w-7xl mx-auto px-4 md:px-6 lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10">
+        {/* 좌측 사이드바 — 데스크탑에서만 */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-4 pt-6">
+            <TagSidebar counts={counts} total={totalTagged} />
           </div>
-        ) : (
-          <div className="divide-y-2 divide-black">
-            {papers.map((paper, i) => (
-              <PaperCard key={i} paper={paper} index={i + 1} />
-            ))}
-          </div>
-        )}
+        </aside>
+
+        {/* 논문 목록 */}
+        <div className="min-w-0">
+          {papers.length === 0 ? (
+            <div className="py-24 text-center text-gray-400">
+              <p className="text-lg">아직 오늘의 논문이 없습니다.</p>
+              <p className="text-sm mt-2">매일 오전 9시에 업데이트됩니다.</p>
+            </div>
+          ) : (
+            <div className="divide-y-2 divide-black">
+              {papers.map((paper, i) => (
+                <PaperCard key={i} paper={paper} index={i + 1} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── 푸터 ── */}
       <footer className="mt-16 border-t border-gray-200 bg-gray-50 py-8 text-center">
         <p className="text-xs text-gray-400">
           자동 생성 · HuggingFace Trending Papers · 매일 오전 9시 업데이트

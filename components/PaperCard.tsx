@@ -1,4 +1,5 @@
 import type { Paper } from "@/app/page";
+import { CATEGORY_MAP } from "@/lib/categories";
 
 function parseSummary(text: string) {
   const sections: { title: string; lines: string[] }[] = [];
@@ -38,6 +39,22 @@ export default function PaperCard({
           <h2 className="text-lg md:text-xl font-bold font-serif-kr text-gray-900 leading-snug mb-1">
             {paper.title}
           </h2>
+          {paper.tags && paper.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
+              {paper.tags.map((key) => {
+                const cat = CATEGORY_MAP[key];
+                if (!cat) return null;
+                return (
+                  <span
+                    key={key}
+                    className={`text-[10px] font-bold tracking-wide px-2 py-0.5 border rounded-sm ${cat.color}`}
+                  >
+                    {cat.label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
           <a
             href={paper.arxiv_url}
             target="_blank"
