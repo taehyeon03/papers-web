@@ -22,9 +22,11 @@ from supabase import create_client
 # 설정
 # ──────────────────────────────────────────────
 HF_TRENDING_URL = "https://huggingface.co/papers"
-MAX_PAPERS = 10  # HuggingFace trending 페이지는 upvote 순 정렬 → 상위 10개 수집
-TRENDING_POOL_SIZE = 30  # 필터링 후에도 MAX_PAPERS를 채울 수 있도록 더 많이 수집
+MAX_PAPERS = 30  # HuggingFace trending 상단에서 인기순으로 수집할 최대 개수
+TRENDING_POOL_SIZE = 80  # 필터링 후에도 MAX_PAPERS를 채울 수 있도록 더 많이 수집
 MAX_FIGURES_PER_PAPER = 2
+SUMMARY_MODEL = "llama-3.3-70b-versatile"  # 한국어 요약 (품질 우선)
+TAG_MODEL = "llama-3.1-8b-instant"          # 분야 분류 (가벼움 → 무료 한도 절약)
 
 # 빅테크 회사 논문은 제외 (저자 소속/제목/초록에서 매칭)
 BLOCKED_COMPANY_PATTERNS = [
@@ -192,7 +194,7 @@ def summarize_korean(title, abstract, api_key):
     for attempt in range(3):
         try:
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=SUMMARY_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
@@ -230,7 +232,7 @@ Output ONLY a JSON array of 1 or 2 category keys, nothing else. Example: ["found
     for attempt in range(3):
         try:
             resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=TAG_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=50,
@@ -260,11 +262,12 @@ Output ONLY a JSON array of 1 or 2 category keys, nothing else. Example: ["found
 # ──────────────────────────────────────────────
 def save_to_supabase(papers_data, date_str):
     sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    # hf_papers 컬럼에 저장 — papers 컬럼을 덮어쓰는 외부 스크립트와 충돌 회피
     sb.table("digests").upsert(
-        {"date": date_str, "papers": papers_data},
+        {"date": date_str, "hf_papers": papers_data},
         on_conflict="date"
     ).execute()
-    print(f"  ✔ Supabase digests 저장 완료 ({len(papers_data)}개 논문)")
+    print(f"  ✔ Supabase digests.hf_papers 저장 완료 ({len(papers_data)}개 논문)")
 
     # paper_tags 테이블에도 저장 (digests를 외부 스크립트가 덮어쓰는 것에 대비)
     rows = [

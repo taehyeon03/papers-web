@@ -39,3 +39,6 @@ create table if not exists paper_tags (
 alter table paper_tags enable row level security;
 create policy "Anyone can read paper_tags"
   on paper_tags for select using (true);
+
+-- 우리가 쓰는 HF papers는 별도 컬럼에 보관 — papers 컬럼을 덮어쓰는 외부 스크립트와 충돌 회피
+alter table digests add column if not exists hf_papers jsonb default '[]'::jsonb;
