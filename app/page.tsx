@@ -23,7 +23,15 @@ export interface Paper {
 
 interface DigestRow {
   date: string;
-  papers: Paper[];
+  papers: Paper[] | { papers?: Paper[] } | null;
+}
+
+function unwrapPapers(raw: DigestRow["papers"]): Paper[] {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object" && Array.isArray((raw as any).papers)) {
+    return (raw as any).papers;
+  }
+  return [];
 }
 
 export default async function Home() {
@@ -33,10 +41,19 @@ export default async function Home() {
     .order("date", { ascending: false });
 
   const all: DigestRow[] = Array.isArray(digests) ? digests : [];
-  const latest = all[0];
-  const papers: Paper[] = Array.isArray(latest?.papers) ? latest.papers : [];
-  const dateStr = latest?.date
-    ? new Date(latest.date).toLocaleDateString("ko-KR", {
+
+  // 가장 최근 비어있지 않은 digest를 화면에 표시
+  let displayed: { date: string; papers: Paper[] } | null = null;
+  for (const row of all) {
+    const ps = unwrapPapers(row.papers);
+    if (ps.length > 0) {
+      displayed = { date: row.date, papers: ps };
+      break;
+    }
+  }
+  const papers: Paper[] = displayed?.papers ?? [];
+  const dateStr = displayed?.date
+    ? new Date(displayed.date).toLocaleDateString("ko-KR", {
         year: "numeric",
         month: "long",
         day: "numeric",
@@ -44,14 +61,13 @@ export default async function Home() {
       })
     : "로딩 중...";
 
-  // 누적 태그 카운트 (모든 digest의 모든 paper.tags 합산)
+  // 누적 태그 카운트 (모든 digest 통합)
   const counts: Record<string, number> = Object.fromEntries(
     CATEGORIES.map((c) => [c.key, 0])
   );
   let totalTagged = 0;
   for (const row of all) {
-    const ps = Array.isArray(row.papers) ? row.papers : [];
-    for (const p of ps) {
+    for (const p of unwrapPapers(row.papers)) {
       const tags = Array.isArray(p.tags) ? p.tags : [];
       if (tags.length > 0) totalTagged++;
       for (const t of tags) {
