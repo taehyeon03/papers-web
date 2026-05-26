@@ -22,7 +22,18 @@ from supabase import create_client
 # ──────────────────────────────────────────────
 HF_TRENDING_URL = "https://huggingface.co/papers"
 MAX_PAPERS = 10  # HuggingFace trending 페이지는 upvote 순 정렬 → 상위 10개 수집
+TRENDING_POOL_SIZE = 30  # 필터링 후에도 MAX_PAPERS를 채울 수 있도록 더 많이 수집
 MAX_FIGURES_PER_PAPER = 2
+
+# 빅테크 회사 논문은 제외 (저자 소속/제목/초록에서 매칭)
+BLOCKED_COMPANY_PATTERNS = [
+    r"\bmicrosoft\b",
+    r"\bmsr\b",            # Microsoft Research
+    r"\bamazon\b",
+    r"\baws\b",
+    r"\bapple\b",
+]
+BLOCKED_RE = re.compile("|".join(BLOCKED_COMPANY_PATTERNS), re.IGNORECASE)
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -35,7 +46,7 @@ HEADERS = {
 # ──────────────────────────────────────────────
 # 1. 논문 목록 수집
 # ──────────────────────────────────────────────
-def get_trending_papers(limit=MAX_PAPERS):
+def get_trending_papers(limit=TRENDING_POOL_SIZE):
     resp = requests.get(HF_TRENDING_URL, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -83,12 +94,27 @@ def get_paper_details(hf_url):
 
     figures = _extract_figures(arxiv_id) if arxiv_id else []
 
+    # 저자/소속 텍스트 (필터링용) — HF 페이지의 메타 영역
+    affiliations = ""
+    for sel in ["div.SVELTE_HYDRATER", "div.contents", "main"]:
+        el = soup.select_one(sel)
+        if el:
+            affiliations = el.get_text(" ", strip=True)[:3000]
+            break
+
     return {
         "abstract": abstract,
         "arxiv_id": arxiv_id,
         "arxiv_url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else hf_url,
         "figures": figures,
+        "_affiliations": affiliations,
     }
+
+
+def is_blocked(title, abstract, affiliations):
+    """제목/초록/HF 페이지 텍스트에서 차단 회사 키워드가 발견되면 True"""
+    haystack = " ".join([title or "", abstract or "", affiliations or ""])
+    return bool(BLOCKED_RE.search(haystack))
 
 
 def _extract_figures(arxiv_id):
@@ -192,13 +218,22 @@ if __name__ == "__main__":
     print("=" * 60)
 
     papers = get_trending_papers()
-    print(f"✔ {len(papers)}개 논문 발견\n")
+    print(f"✔ {len(papers)}개 논문 발견 (필터 후 상위 {MAX_PAPERS}개 사용)\n")
 
     results = []
+    skipped = 0
     for idx, p in enumerate(papers, 1):
+        if len(results) >= MAX_PAPERS:
+            break
+
         print(f"[{idx}/{len(papers)}] {p['title'][:60]}")
         details = get_paper_details(p["hf_url"])
         print(f"  arxiv: {details['arxiv_id']} | 피규어: {len(details['figures'])}개")
+
+        if is_blocked(p["title"], details["abstract"], details.get("_affiliations", "")):
+            skipped += 1
+            print("  ⏭  빅테크(MS/AWS/Apple) 관련 논문 → 건너뜀\n")
+            continue
 
         if details["abstract"]:
             print("  → Groq 요약 생성 중…")
@@ -207,8 +242,12 @@ if __name__ == "__main__":
         else:
             summary = "[핵심 요약]\n초록을 가져올 수 없습니다."
 
+        # 저장 시 내부용 필드는 제거
+        details.pop("_affiliations", None)
         results.append({**p, **details, "summary_kr": summary})
         print()
+
+    print(f"✔ 최종 {len(results)}개 (건너뜀: {skipped}개)")
 
     print("💾 Supabase 저장 중…")
     save_to_supabase(results, today_iso)
