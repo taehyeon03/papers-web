@@ -35,19 +35,42 @@ function unwrapPapers(raw: DigestRow["papers"]): Paper[] {
 }
 
 export default async function Home() {
-  const { data: digests } = await supabase
-    .from("digests")
-    .select("date, papers")
-    .order("date", { ascending: false });
+  const [{ data: digests }, { data: tagRows }] = await Promise.all([
+    supabase
+      .from("digests")
+      .select("date, papers")
+      .order("date", { ascending: false }),
+    supabase
+      .from("paper_tags")
+      .select("arxiv_id, tags"),
+  ]);
 
   const all: DigestRow[] = Array.isArray(digests) ? digests : [];
 
-  // 가장 최근 비어있지 않은 digest를 화면에 표시
+  // arxiv_id → tags 매핑 (paper_tags 테이블이 권위)
+  const tagsByArxiv: Record<string, string[]> = {};
+  if (Array.isArray(tagRows)) {
+    for (const r of tagRows as Array<{ arxiv_id: string; tags: unknown }>) {
+      if (r.arxiv_id && Array.isArray(r.tags)) {
+        tagsByArxiv[r.arxiv_id] = r.tags as string[];
+      }
+    }
+  }
+
+  const resolveTags = (p: Paper): string[] => {
+    if (p.arxiv_id && tagsByArxiv[p.arxiv_id]) return tagsByArxiv[p.arxiv_id];
+    return Array.isArray(p.tags) ? p.tags : [];
+  };
+
+  // 가장 최근 비어있지 않은 digest를 화면에 표시 (paper_tags의 태그 병합)
   let displayed: { date: string; papers: Paper[] } | null = null;
   for (const row of all) {
     const ps = unwrapPapers(row.papers);
     if (ps.length > 0) {
-      displayed = { date: row.date, papers: ps };
+      displayed = {
+        date: row.date,
+        papers: ps.map((p) => ({ ...p, tags: resolveTags(p) })),
+      };
       break;
     }
   }
@@ -61,18 +84,16 @@ export default async function Home() {
       })
     : "로딩 중...";
 
-  // 누적 태그 카운트 (모든 digest 통합)
+  // 누적 태그 카운트 — paper_tags 테이블 권위
   const counts: Record<string, number> = Object.fromEntries(
     CATEGORIES.map((c) => [c.key, 0])
   );
   let totalTagged = 0;
-  for (const row of all) {
-    for (const p of unwrapPapers(row.papers)) {
-      const tags = Array.isArray(p.tags) ? p.tags : [];
-      if (tags.length > 0) totalTagged++;
-      for (const t of tags) {
-        if (t in counts) counts[t]++;
-      }
+  for (const tags of Object.values(tagsByArxiv)) {
+    if (tags.length === 0) continue;
+    totalTagged++;
+    for (const t of tags) {
+      if (t in counts) counts[t]++;
     }
   }
 

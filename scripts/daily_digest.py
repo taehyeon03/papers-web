@@ -264,7 +264,20 @@ def save_to_supabase(papers_data, date_str):
         {"date": date_str, "papers": papers_data},
         on_conflict="date"
     ).execute()
-    print(f"  ✔ Supabase 저장 완료 ({len(papers_data)}개 논문)")
+    print(f"  ✔ Supabase digests 저장 완료 ({len(papers_data)}개 논문)")
+
+    # paper_tags 테이블에도 저장 (digests를 외부 스크립트가 덮어쓰는 것에 대비)
+    rows = [
+        {"arxiv_id": p["arxiv_id"], "tags": p.get("tags", [])}
+        for p in papers_data
+        if p.get("arxiv_id")
+    ]
+    if rows:
+        try:
+            sb.table("paper_tags").upsert(rows, on_conflict="arxiv_id").execute()
+            print(f"  ✔ paper_tags 저장 완료 ({len(rows)}건)")
+        except Exception as e:
+            print(f"  ⚠ paper_tags 저장 실패 (테이블 미생성 가능): {e}")
 
 
 # ──────────────────────────────────────────────

@@ -29,3 +29,13 @@ create policy "Anyone can read digests"
   on digests for select using (true);
 
 -- 구독자 테이블은 service role만 쓰기 가능 (기본값)
+
+-- 논문 분야 태그 — digests를 외부 스크립트가 덮어써도 살아남도록 분리
+create table if not exists paper_tags (
+  arxiv_id  text primary key,
+  tags      jsonb not null default '[]',
+  tagged_at timestamptz default now()
+);
+alter table paper_tags enable row level security;
+create policy "Anyone can read paper_tags"
+  on paper_tags for select using (true);
