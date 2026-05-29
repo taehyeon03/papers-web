@@ -84,6 +84,20 @@ export default async function Home() {
     }
   }
 
+  // paper_tags 테이블이 없거나(미생성) 비어 있으면, 이번 달 digest들의
+  // 인라인 tags로 보완해 사이드바 누적 카운트가 비지 않도록 한다.
+  // arxiv_id 기준 dedup이라 한 논문이 여러 날 실려도 한 번만 집계된다.
+  const monthStartMs = new Date(monthStart).getTime();
+  for (const row of all) {
+    if (!row.date || new Date(row.date).getTime() < monthStartMs) continue;
+    for (const p of pickPapers(row)) {
+      if (!p.arxiv_id || tagsByArxiv[p.arxiv_id]) continue;
+      if (Array.isArray(p.tags) && p.tags.length > 0) {
+        tagsByArxiv[p.arxiv_id] = p.tags;
+      }
+    }
+  }
+
   const resolveTags = (p: Paper): string[] => {
     if (p.arxiv_id && tagsByArxiv[p.arxiv_id]) return tagsByArxiv[p.arxiv_id];
     return Array.isArray(p.tags) ? p.tags : [];
