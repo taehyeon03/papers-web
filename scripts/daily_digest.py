@@ -262,12 +262,26 @@ Output ONLY a JSON array of 1 or 2 category keys, nothing else. Example: ["found
 # ──────────────────────────────────────────────
 def save_to_supabase(papers_data, date_str):
     sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
-    # hf_papers 컬럼에 저장 — papers 컬럼을 덮어쓰는 외부 스크립트와 충돌 회피
-    sb.table("digests").upsert(
-        {"date": date_str, "hf_papers": papers_data},
-        on_conflict="date"
-    ).execute()
-    print(f"  ✔ Supabase digests.hf_papers 저장 완료 ({len(papers_data)}개 논문)")
+    # hf_papers 컬럼에 저장 — papers 컬럼을 덮어쓰는 외부 스크립트와 충돌 회피.
+    # hf_papers 컬럼이 아직 없는 DB(마이그레이션 미적용)에서는 papers 컬럼으로 폴백해
+    # 사이트가 멈추지 않도록 한다. (웹의 fetchDigests 폴백과 대칭)
+    try:
+        sb.table("digests").upsert(
+            {"date": date_str, "hf_papers": papers_data},
+            on_conflict="date"
+        ).execute()
+        print(f"  ✔ Supabase digests.hf_papers 저장 완료 ({len(papers_data)}개 논문)")
+    except Exception as e:
+        err = str(e)
+        if "hf_papers" in err or "PGRST204" in err or "schema cache" in err:
+            print(f"  ⚠ hf_papers 컬럼 없음 → papers 컬럼으로 폴백 저장: {e}")
+            sb.table("digests").upsert(
+                {"date": date_str, "papers": papers_data},
+                on_conflict="date"
+            ).execute()
+            print(f"  ✔ Supabase digests.papers 폴백 저장 완료 ({len(papers_data)}개 논문)")
+        else:
+            raise
 
     # paper_tags 테이블에도 저장 (digests를 외부 스크립트가 덮어쓰는 것에 대비)
     rows = [
