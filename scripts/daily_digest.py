@@ -25,9 +25,9 @@ HF_TRENDING_URL = "https://huggingface.co/papers"
 MAX_PAPERS = 30  # HuggingFace trending 상단에서 인기순으로 수집할 최대 개수
 TRENDING_POOL_SIZE = 80  # 필터링 후에도 MAX_PAPERS를 채울 수 있도록 더 많이 수집
 MAX_FIGURES_PER_PAPER = 2
-SUMMARY_MODEL = "llama-3.3-70b-versatile"  # 한국어 요약 (품질 우선)
-TAG_MODEL = "llama-3.3-70b-versatile"       # 분야 분류 — 8b-instant deprecated 대비 동일 모델 사용
-TAG_MAX_TOKENS = 30
+SUMMARY_MODEL = "openai/gpt-oss-120b"  # 한국어 요약 (품질 우선)
+TAG_MODEL = "openai/gpt-oss-20b"      # 분야 분류 (llama 모델은 Groq에서 종료됨)
+TAG_MAX_TOKENS = 500  # gpt-oss는 reasoning 토큰도 소모
 
 # 빅테크 회사 논문은 제외 (저자 소속/제목/초록에서 매칭)
 BLOCKED_COMPANY_PATTERNS = [
@@ -198,6 +198,7 @@ def summarize_korean(title, abstract, api_key):
                 model=SUMMARY_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
+                reasoning_effort="low",
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
@@ -237,6 +238,7 @@ def tag_paper(title, abstract, api_key):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.0,
+                reasoning_effort="low",
                 max_tokens=TAG_MAX_TOKENS,
             )
             text = resp.choices[0].message.content.strip()
